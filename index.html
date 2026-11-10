@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>웨잇 제로 Wait-ZERO</title>
+<style>
+/* ===== 색상 변수: 네이비 기반 (라이트/다크 자동 대응) ===== */
+:root{--navy:#1b2a5c;--bg:#f2f5fb;--card:#fff;--text:#16203d;--sub:#66738f;--line:#dfe5f2;
+ --free:#0f9d68;--freebg:#e2f6ee;--busy:#d9582f;--busybg:#fdebe4;--ring:#e3e8f4;color-scheme:light}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0d1430;--card:#172048;--text:#eef1fb;--sub:#9ba8ca;--line:#27326a;
+ --freebg:#10382f;--busybg:#3b2320;--ring:#27326a;--free:#3ccf94;--busy:#ff8a63;color-scheme:dark}}
+:root{box-sizing:border-box;padding-bottom:env(safe-area-inset-bottom,0px)}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--text);font-family:"Pretendard","Apple SD Gothic Neo","Noto Sans KR",system-ui,sans-serif;max-width:520px;margin:0 auto;padding-bottom:90px}
+button{font:inherit;cursor:pointer;border:0;color:inherit}
+/* 상단 헤더 */
+header{background:var(--navy);color:#fff;padding:calc(env(safe-area-inset-top,0px) + 18px) 18px 22px;border-radius:0 0 22px 22px}
+header h1{margin:0;font-size:22px}
+header p{margin:4px 0 14px;font-size:13px;opacity:.8}
+.sum{display:flex;gap:10px}
+.sum div{flex:1;background:rgba(255,255,255,.12);border-radius:12px;padding:10px 12px;font-size:13px}
+.sum b{display:block;font-size:22px;margin-top:2px}
+/* 탭 */
+.tabs{display:flex;gap:8px;padding:14px 16px 6px}
+.tabs button{padding:8px 16px;border-radius:20px;background:var(--card);border:1px solid var(--line);font-size:14px}
+.tabs button.on{background:var(--navy);color:#fff;border-color:var(--navy)}
+/* 안내 배너 / 내 대기 */
+.note{margin:8px 16px;padding:12px 14px;border-radius:12px;background:var(--busybg);font-size:14px;display:flex;justify-content:space-between;align-items:center;gap:10px}
+.note.me{background:var(--freebg)}
+.note button{background:var(--navy);color:#fff;border-radius:10px;padding:8px 12px;font-size:13px;white-space:nowrap}
+/* 기기 카드 */
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:8px 16px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:14px 10px;text-align:center}
+.card .nm{font-weight:700;font-size:15px}
+.card svg{width:92px;height:92px;margin:8px 0 4px}
+.badge{display:inline-block;padding:3px 10px;border-radius:12px;font-size:12px;font-weight:700}
+.free .badge{background:var(--freebg);color:var(--free)}
+.busy .badge{background:var(--busybg);color:var(--busy)}
+.card .pw{font-size:12px;color:var(--sub);margin-top:6px;min-height:16px}
+.free{border-color:var(--free)}
+/* 하단 시트(결제) / 알림 */
+.mask{position:fixed;inset:0;background:rgba(5,10,30,.55);display:none;align-items:flex-end;justify-content:center;z-index:20}
+.mask.show{display:flex}
+.sheet{background:var(--card);width:100%;max-width:520px;border-radius:20px 20px 0 0;padding:20px 18px calc(env(safe-area-inset-bottom,0px) + 20px)}
+.sheet h2{margin:0 0 12px;font-size:18px}
+.opt{display:block;padding:12px;border:1px solid var(--line);border-radius:12px;margin-bottom:8px}
+.opt input{margin-right:8px}
+.cta{width:100%;background:var(--navy);color:#fff;padding:14px;border-radius:12px;font-size:16px;font-weight:700;margin-top:6px}
+.ghost{width:100%;background:none;color:var(--sub);padding:10px;margin-top:2px}
+.toast{position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom,0px) + 24px);transform:translateX(-50%);background:var(--navy);color:#fff;padding:12px 18px;border-radius:24px;font-size:14px;z-index:30;display:none;max-width:90%;text-align:center}
+/* 시연 패널 */
+details{margin:14px 16px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px 14px;font-size:14px}
+summary{font-weight:700}
+details select,details button{margin:8px 6px 0 0;padding:8px 12px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--text)}
+details p{color:var(--sub);font-size:12px;margin:8px 0 0}
+</style>
+</head>
+<body>
+<header>
+  <h1>웨잇 제로</h1>
+  <p>세탁실에 가기 전에 빈 기기부터 확인하세요</p>
+  <div class="sum"><div>세탁기 사용 가능<b id="sw"></b></div><div>건조기 사용 가능<b id="sd"></b></div></div>
+</header>
+<div class="tabs" id="tabs"></div>
+<div id="notes"></div>
+<div class="grid" id="grid"></div>
+
+<!-- 시연 패널: 스마트 플러그(전력)를 가상으로 조작 -->
+<details>
+  <summary>시연 패널 (스마트 플러그 시뮬레이션)</summary>
+  <select id="sel"></select><br>
+  <button onclick="plug(true)">전원 ON</button><button onclick="plug(false)">전원 OFF</button><button onclick="init()">처음 상태로</button>
+  <p>시연용으로 1초가 1분처럼 흘러갑니다. 전력이 감지되면 자동으로 사용 중이 되고, 전력이 끊기면 자동으로 사용 가능이 됩니다.</p>
+</details>
+
+<!-- 모의 결제 시트 -->
+<div class="mask" id="pay"><div class="sheet">
+  <h2 id="pt"></h2><div id="po"></div>
+  <button class="cta" onclick="doPay()">메타클럽으로 결제하기 (모의)</button>
+  <button class="ghost" onclick="closeAll()">닫기</button>
+</div></div>
+<!-- 내 차례 알림 -->
+<div class="mask" id="alert"><div class="sheet">
+  <h2 id="at"></h2><p>지금 가면 바로 쓸 수 있어요.</p>
+  <button class="cta" onclick="closeAll()">확인</button>
+</div></div>
+<div class="toast" id="toast"></div>
+
+<script>
+/* ===== 1. 기본 데이터 ===== */
+const NAME = {wash:'세탁기', dry:'건조기'};
+// 결제 코스(모의): 세탁기·건조기 모두 코스와 상관없이 1,200원 / 50분, 헹굼 추가는 300원
+const PRICE = 1200, MIN = 50, RINSE = 300;
+const COURSE = {wash:['강력세탁','표준세탁','합섬세탁','울세탁'], dry:['강력','표준','약','송풍']};
+let devices, q, me, tab='all', pending=null, toastT;
+const $ = s => document.querySelector(s);
+// 전력이 감지되거나 결제로 잠겨 있으면 '사용 중'
+const busy = d => d.lock || d.watts >= 10;
+
+/* ===== 2. 시작/초기화 ===== */
+function init(){
+  const seed = {W1:18,W2:7,W3:33,D1:25,D2:12};   // 처음부터 사용 중인 기기와 남은 분
+  devices = [];
+  ['wash','dry'].forEach(t => { for(let i=1;i<=4;i++){
+    const id=(t==='wash'?'W':'D')+i, r=seed[id]||0;
+    devices.push({id,type:t,name:NAME[t]+' '+i,remain:r,total:r||1,lock:false,watts:r?(t==='wash'?420:1100):0});
+  }});
+  q = {wash:2, dry:1};   // 앞서 대기 중인 다른 학생 수(시연용)
+  me = null;
+  $('#sel').innerHTML = devices.map(d=>`<option value="${d.id}">${d.name}</option>`).join('');
+  closeAll(); render();
+}
+
+/* ===== 3. 1초마다 시간 흐름 (1초 = 1분, 시연용) ===== */
+setInterval(()=>{
+  devices.forEach(d=>{
+    if(!busy(d)) return;
+    d.remain--;
+    if(d.watts>=10 || d.lock) d.watts = (d.type==='wash'?420:1100) + Math.round(Math.random()*60); // 전력 흔들림
+    if(d.remain<=0){ d.watts=0; d.lock=false; d.remain=0; freed(d); }   // 종료 → 자동으로 빈 기기
+  });
+  render();
+},1000);
+
+/* ===== 4. 빈 기기가 생겼을 때: 대기 순번 알림 (3순위 기능) ===== */
+function freed(d){
+  q[d.type] = Math.max(0,q[d.type]-1);
+  if(me && me.type===d.type){
+    me.pos--;
+    if(me.pos<=0){ me=null; $('#at').textContent = d.name+'이(가) 비었어요! 내 차례예요'; $('#alert').classList.add('show'); }
+  }
+}
+function register(t){ if(me) return toast('이미 대기 중이에요'); me={type:t,pos:q[t]+1}; q[t]++; toast(NAME[t]+' 대기 등록 완료'); render(); }
+function cancelWait(){ q[me.type]--; me=null; render(); }
+
+/* ===== 5. 스마트 플러그 시뮬레이션 (1순위 기능) ===== */
+function plug(on){
+  const d = devices.find(x=>x.id===$('#sel').value);
+  if(on){ if(busy(d)) return toast(d.name+'은(는) 이미 사용 중이에요'); d.watts=d.type==='wash'?420:1100; d.remain=d.total=30; }
+  else { if(!busy(d)) return; d.watts=0; d.lock=false; d.remain=0; freed(d); }
+  render();
+}
+
+/* ===== 6. 모의 결제 (2순위 기능) ===== */
+function tap(id){
+  const d = devices.find(x=>x.id===id);
+  if(busy(d)) return toast(d.name+'은(는) 약 '+d.remain+'분 후에 끝나요');
+  pending=d;
+  $('#pt').textContent = d.name+' 결제';
+  // 코스 선택(가격·시간 동일) + 세탁기만 헹굼 추가 선택
+  $('#po').innerHTML = COURSE[d.type].map((c,i)=>`<label class="opt"><input type="radio" name="c" value="${i}" ${i?'':'checked'}>${c}</label>`).join('')
+    + (d.type==='wash' ? `<label class="opt"><input type="checkbox" id="rinse" onchange="calc()">헹굼 추가 +${RINSE}원</label>` : '')
+    + `<div id="tot" style="text-align:right;font-weight:700;margin:8px 0"></div>`;
+  calc();
+  $('#pay').classList.add('show');
+}
+// 결제 금액 표시 갱신
+function calc(){
+  const r = $('#rinse') && $('#rinse').checked;
+  $('#tot').textContent = MIN+'분 · 결제 금액 '+(PRICE+(r?RINSE:0)).toLocaleString()+'원';
+}
+function doPay(){
+  const d=pending, rinse=d.type==='wash' && $('#rinse').checked, total=PRICE+(rinse?RINSE:0);
+  if(busy(d)){ closeAll(); return toast('방금 다른 사람이 사용을 시작했어요'); }
+  d.lock=true; d.remain=d.total=MIN; d.watts=d.type==='wash'?420:1100;   // 결제 즉시 '사용 중' 잠금
+  closeAll(); toast(d.name+' '+total.toLocaleString()+'원 결제 완료 · 사용 중으로 잠겼어요'); render();
+}
+
+/* ===== 7. 화면 그리기 ===== */
+function ring(d){   // 원형 진행 링 (남은 시간)
+  const b=busy(d), r=38, C=2*Math.PI*r, p=b?Math.max(0,d.remain/d.total):1;
+  return `<svg viewBox="0 0 92 92"><circle cx="46" cy="46" r="${r}" fill="none" stroke="var(--ring)" stroke-width="8"/>
+  <circle cx="46" cy="46" r="${r}" fill="none" stroke="${b?'var(--busy)':'var(--free)'}" stroke-width="8" stroke-linecap="round"
+  stroke-dasharray="${C*p} ${C}" transform="rotate(-90 46 46)"/>
+  <text x="46" y="${b?44:50}" text-anchor="middle" font-size="${b?20:14}" font-weight="700" fill="var(--text)">${b?d.remain:'비어 있음'}</text>
+  ${b?'<text x="46" y="60" text-anchor="middle" font-size="11" fill="var(--sub)">분 남음</text>':''}</svg>`;
+}
+function render(){
+  const free = t => devices.filter(d=>d.type===t && !busy(d)).length;
+  $('#sw').textContent = free('wash')+' / 4'; $('#sd').textContent = free('dry')+' / 4';
+  $('#tabs').innerHTML = [['all','전체'],['wash','세탁기'],['dry','건조기']].map(([k,l])=>`<button class="${tab===k?'on':''}" onclick="tab='${k}';render()">${l}</button>`).join('');
+  // 안내: 내 대기 현황 / 빈 기기 없을 때 대기 등록
+  let n = '';
+  if(me) n += `<div class="note me"><span>${NAME[me.type]} 대기 ${me.pos}번째 · 빈 기기가 생기면 알려드려요</span><button onclick="cancelWait()">취소</button></div>`;
+  ['wash','dry'].forEach(t=>{ if((tab==='all'||tab===t) && !free(t) && !me) n += `<div class="note"><span>${NAME[t]}가 모두 사용 중이에요</span><button onclick="register('${t}')">대기 등록</button></div>`; });
+  $('#notes').innerHTML = n;
+  $('#grid').innerHTML = devices.filter(d=>tab==='all'||d.type===tab).map(d=>{ const b=busy(d);
+    return `<button class="card ${b?'busy':'free'}" onclick="tap('${d.id}')"><div class="nm">${d.name}</div>${ring(d)}
+    <span class="badge">${b?'사용 중':'사용 가능'}</span><div class="pw">${b?'⚡ '+d.watts+'W'+(d.lock?' · 결제됨':''):'탭해서 결제'}</div></button>`; }).join('');
+}
+function closeAll(){ document.querySelectorAll('.mask').forEach(m=>m.classList.remove('show')); }
+function toast(m){ const t=$('#toast'); t.textContent=m; t.style.display='block'; clearTimeout(toastT); toastT=setTimeout(()=>t.style.display='none',2200); }
+init();
+</script>
+</body>
+</html>
